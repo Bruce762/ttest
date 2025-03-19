@@ -14,20 +14,89 @@ class ChatViewModel: ObservableObject {
     @Published var deadline: Date = Date() // 改為 Date 類型
     @Published var preferredTime: String = "" // 新增讀書偏好時間
     @Published var note: String = "" // 新增備注
+    @Published var todoItems: [TodoItem] = []//日曆item
     
     @Published var isPlanTitleEmpty: Bool = false
     @Published var isSubjectRangeEmpty: Bool = false
 
     private func getCurrentTime() -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy/M/d"
-        return formatter.string(from: Date())
+        formatter.dateFormat = "yyyy/M/d"  // 設定日期格式為：年/月/日
+        return formatter.string(from: Date())  // 將當前時間轉換為字串
     }
     
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy/M/d"
-        return formatter.string(from: date)
+        formatter.dateFormat = "yyyy/M/d"  // 設定日期格式為：年/月/日
+        return formatter.string(from: date)  // 將輸入的日期轉換為字串
+    }
+    
+    //解析回傳格式
+    private func parseGPTResponse(_ response: String) -> [TodoItem] {
+        // 將 GPT 的回應文字按換行符號分割成多行
+        let lines = response.components(separatedBy: .newlines)
+        // 創建一個空陣列來存儲解析後的 TodoItem
+        var items: [TodoItem] = []
+        
+        // 創建日期格式化器，用於解析日期字串
+        let dateFormatter = DateFormatter()
+        // 設定日期格式為 "yyyy-MM-dd"，例如 "2025-03-21"
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        
+        // 遍歷每一行回應
+        for line in lines {
+            // 將每行用 ": " 分割成兩部分：日期和內容
+            let components = line.components(separatedBy: ": ")
+            // 確保分割後有兩個部分，並且可以成功解析日期
+            guard components.count == 2,
+                  let dateString = components.first,
+                  let date = dateFormatter.date(from: dateString) else {
+                continue  // 如果解析失敗，跳過這一行
+            }
+            
+            // 獲取冒號後面的內容部分
+            let content = components[1]
+            // 使用完整內容作為標題
+            let title = content
+            
+            // 創建日曆實例，用於處理日期時間
+            let calendar = Calendar.current
+            
+            // 設定開始時間為當天的早上9點
+            var startTimeComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+            startTimeComponents.hour = 9
+            startTimeComponents.minute = 0
+            startTimeComponents.second = 0
+            
+            // 使用日曆來創建完整的日期時間
+            if let startTime = calendar.date(from: startTimeComponents) {
+                // 確保日期和開始時間是同一天
+                let item = TodoItem(
+                    title: title,
+                    date: calendar.startOfDay(for: startTime),  // 使用開始時間的日期
+                    startTime: startTime,
+                    durationHours: 2.0,
+                    isCompleted: false
+                )
+                // 將創建的項目添加到陣列中
+                items.append(item)
+            }
+        }
+        
+        // 除錯：印出所有解析結果
+        print("=== TodoItems 解析結果 ===")
+        for (index, item) in items.enumerated() {
+            print("項目 \(index + 1):")
+            print("  標題: \(item.title)")
+            print("  日期: \(item.date)")
+            print("  開始時間: \(item.startTime)")
+            print("  持續時間: \(item.durationHours)小時")
+            print("  完成狀態: \(item.isCompleted)")
+            print("---")
+        }
+        
+        // 返回解析後的 TodoItem 陣列
+        return items
     }
 
     func sendMessage() {
@@ -65,10 +134,6 @@ class ChatViewModel: ObservableObject {
 
 請謹記：不得添加與此無關的內容，否則後果將非常嚴重。務必確保在截止日前可讀完所有內容。
 """
-
-
-
-
         
         // 先顯示 prompt
         DispatchQueue.main.async {
@@ -79,6 +144,9 @@ class ChatViewModel: ObservableObject {
             DispatchQueue.main.async {
                 if let response = response {
                     self.messages.append(response)
+                    
+                    // 解析回應並轉換為 TodoItem
+                    self.todoItems = self.parseGPTResponse(response)
                 } else {
                     self.messages.append("AI 無法回應")
                 }
